@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: default
+  labels:
+    app: logstash
+spec:
+  # Use ClusterIP for internal access within the cluster
+  # Change to LoadBalancer for external Fleet agents
+  # Change to NodePort for access via node IP:port
+  type: ClusterIP
+  ports:
+    - name: beats
+      port: 5044
+      targetPort: 5044
+      protocol: TCP
+    - name: http
+      port: 9600
+      targetPort: 9600
+      protocol: TCP
+  selector:
+    app: logstash
+
+---
+# Optional: LoadBalancer service for external Fleet agents
+# Uncomment this section if Fleet agents are outside the cluster
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: logstash-external
+#   namespace: default
+#   labels:
+#     app: logstash
+# spec:
+#   type: LoadBalancer
+#   ports:
+#     - name: beats
+#       port: 5044
+#       targetPort: 5044
+#       protocol: TCP
+#   selector:
+#     app: logstash

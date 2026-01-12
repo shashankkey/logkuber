@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: default
+  labels:
+    app: logstash
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+    
+    # Persistent Queue Configuration - Optimized Settings
+    queue.type: persisted
+    queue.max_bytes: 4gb
+    queue.checkpoint.writes: 1024
+    queue.checkpoint.acks: 1024
+    queue.checkpoint.interval: 1000
+    queue.checkpoint.retry: true
+    queue.drain: true
+    
+    # Performance tuning
+    pipeline.workers: 2
+    pipeline.batch.size: 125
+    pipeline.batch.delay: 50
+
+  pipelines.yml: |
+    - pipeline.id: main
+      path.config: "/usr/share/logstash/pipeline/*.conf"
+
+  logstash.conf: |
+    input {
+      # Beats input for Elastic Agent / Fleet
+      beats {
+        port => 5044
+        # SSL can be enabled here if needed
+        # ssl => true
+        # ssl_certificate => "/etc/logstash/certs/logstash.crt"
+        # ssl_key => "/etc/logstash/certs/logstash.key"
+      }
+    }
+
+    filter {
+      # Add processing timestamp
+      ruby {
+        code => "event.set('[@metadata][processed_at]', Time.now.iso8601)"
+      }
+
+      # Ensure ECS compatibility
+      if ![ecs] {
+        mutate {
+          add_field => { "[ecs][version]" => "8.0.0" }
+        }
+      }
+
+      # Parse JSON if message contains JSON
+      if [message] =~ /^\{.*\}$/ {
+        json {
+          source => "message"
+          target => "parsed_json"
+          skip_on_invalid_json => true
+        }
+      }
+
+      # Add Logstash processing metadata
+      mutate {
+        add_field => {
+          "[event][module]" => "logstash"
+          "[event][dataset]" => "logstash.logs"
+        }
+      }
+    }
+
+    output {
+      # Elasticsearch output with data stream support (Fleet compatible)
+      elasticsearch {
+        hosts => ["${ELASTICSEARCH_HOST}"]
+        user => "${ELASTICSEARCH_USERNAME}"
+        password => "${ELASTICSEARCH_PASSWORD}"
+        
+        # Disable SSL verification
+        ssl_verification_mode => "none"
+        
+        # Data stream configuration (Fleet compatible format)
+        data_stream => true
+        data_stream_type => "logs"
+        data_stream_dataset => "generic"
+        data_stream_namespace => "default"
+        
+        # Alternative: Use custom index pattern similar to Fleet
+        # If you need custom index naming, uncomment below and comment out data_stream options
+        # index => "logs-%{[data_stream][dataset]}-%{[data_stream][namespace]}-%{+YYYY.MM.dd}"
+        
+        # ILM Configuration
+        ilm_enabled => true
+        ilm_rollover_alias => "logs"
+        ilm_pattern => "000001"
+        ilm_policy => "logs"
+        
+        # Connection settings
+        http_compression => true
+        
+        # Retry on failure
+        retry_on_conflict => 3
+      }
+
+      # Debug output (comment out in production)
+      # stdout {
+      #   codec => rubydebug
+      # }
+    }

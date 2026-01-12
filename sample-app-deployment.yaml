@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-app
+  namespace: default
+  labels:
+    app: sample-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sample-app
+  template:
+    metadata:
+      labels:
+        app: sample-app
+    spec:
+      containers:
+        - name: log-generator
+          image: busybox:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Sample app started - generating logs every 5 seconds"
+              counter=0
+              while true; do
+                counter=$((counter + 1))
+                timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                
+                # Generate different log types
+                case $((counter % 4)) in
+                  0)
+                    echo "{\"timestamp\":\"$timestamp\",\"level\":\"INFO\",\"message\":\"Processing request $counter\",\"service\":\"sample-app\",\"duration_ms\":$((RANDOM % 500))}"
+                    ;;
+                  1)
+                    echo "{\"timestamp\":\"$timestamp\",\"level\":\"DEBUG\",\"message\":\"Cache hit for key user_$((RANDOM % 100))\",\"service\":\"sample-app\"}"
+                    ;;
+                  2)
+                    echo "{\"timestamp\":\"$timestamp\",\"level\":\"WARN\",\"message\":\"High memory usage detected: $((50 + RANDOM % 50))%\",\"service\":\"sample-app\"}"
+                    ;;
+                  3)
+                    echo "{\"timestamp\":\"$timestamp\",\"level\":\"INFO\",\"message\":\"Health check passed\",\"service\":\"sample-app\",\"status\":\"healthy\"}"
+                    ;;
+                esac
+                
+                sleep 5
+              done
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"

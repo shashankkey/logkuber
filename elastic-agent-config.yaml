@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elastic-agent-config
+  namespace: default
+  labels:
+    app: elastic-agent
+data:
+  elastic-agent.yml: |
+    # Elastic Agent Standalone Configuration
+    # Sends logs to Logstash instead of Elasticsearch/Fleet Server
+    
+    outputs:
+      # Logstash output configuration
+      logstash:
+        type: logstash
+        hosts:
+          - "logstash:5044"
+        # SSL configuration (disabled as per requirement)
+        ssl:
+          enabled: false
+        # Load balancing
+        loadbalance: true
+        # Bulk settings
+        bulk_max_size: 2048
+        # Compression
+        compression_level: 3
+
+    inputs:
+      # System logs collection
+      - type: logfile
+        id: system-logs
+        paths:
+          - /var/log/containers/*.log
+        parsers:
+          - container:
+              stream: all
+              format: auto
+        processors:
+          - add_kubernetes_metadata:
+              host: ${NODE_NAME}
+              scope: node
+              matchers:
+                - logs_path:
+                    logs_path: /var/log/containers/
+        data_stream:
+          type: logs
+          dataset: kubernetes.container_logs
+          namespace: default
+
+      # Example: Custom application logs
+      - type: logfile
+        id: app-logs
+        paths:
+          - /var/log/app/*.log
+        ignore_older: 24h
+        data_stream:
+          type: logs
+          dataset: application
+          namespace: default
+        processors:
+          - add_fields:
+              target: ""
+              fields:
+                environment: kubernetes
+                source: elastic-agent
+
+    # Agent settings
+    agent:
+      monitoring:
+        enabled: true
+        logs: true
+        metrics: true
+      logging:
+        level: info
+        to_files: true
+        files:
+          path: /usr/share/elastic-agent/logs
+          name: elastic-agent
+          keepfiles: 7
+          permissions: 0600
